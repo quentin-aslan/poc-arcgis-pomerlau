@@ -6,56 +6,54 @@
     <link rel="stylesheet" href="https://js.arcgis.com/4.21/esri/themes/light/main.css">
     <script src="https://js.arcgis.com/4.21/"></script>
     <style>
-        html, body, #viewDiv {
+        html, body {
             padding: 0;
             margin: 0;
             height: 100%;
-            width: 100%;
-        }
-        #viewDiv {
-            position: absolute;
-            top: 100px;
-            bottom: 0;
             width: 100%;
         }
         .navbar {
             z-index: 1000;
             width: 100%;
             background-color: rgb(203, 213, 225);
-            overflow: hidden;
             display: flex;
             flex-direction: row;
             justify-content: space-between;
             align-items: center;
             padding: 10px 30px;
             box-sizing: border-box;
-            max-height: 100px;
             height: 100px;
+            position: fixed;
+            top: 0;
         }
-
         .navbar img {
-            max-height: 90px;
-            max-width: 200px;
+            max-height: 80px;
+            max-width: 100px;
             margin: 10px;
+        }
+        #viewDiv {
+            position: absolute;
+            top: 100px; /* Height of the navbar */
+            bottom: 0;
+            width: 100%;
         }
     </style>
 </head>
 <body>
 <div class="navbar">
     <img src="https://mma.prnewswire.com/media/1482181/Pomerleau_Inc__Pomerleau_et_la_Factry_annoncent_la_cr_ation_du_a_2.jpg?w=400" alt="Pomerleau">
-    <h1>POC ArcGis JS</h1>
     <img src="https://www.acensi.ca/bundles/pageoverride/img/logo-acensi-bleu.svg" alt="Acensi">
 </div>
-
 <div id="viewDiv"></div>
 <script>
     require([
         "esri/Map",
         "esri/views/MapView",
         "esri/layers/GraphicsLayer",
-        "esri/Graphic",
-        "esri/widgets/Popup"
-    ], function(Map, MapView, GraphicsLayer, Graphic, Popup) {
+        "esri/widgets/Sketch",
+        "esri/Graphic"
+    ], function(Map, MapView, GraphicsLayer, Sketch, Graphic) {
+
         var map = new Map({
             basemap: "topo-vector"
         });
@@ -70,16 +68,10 @@
         var graphicsLayer = new GraphicsLayer();
         map.add(graphicsLayer);
 
-        // Coordonnées approximatives de la carrière de pierre de Saint-Bruno
+        // Ajouter un point par défaut pour la carrière de pierre de Saint-Bruno
         var quarryPoint = {
             type: "point",
             longitude: -73.332,
-            latitude: 45.535
-        };
-
-        var quarryPoint2 = {
-            type: "point",
-            longitude: -75.332,
             latitude: 45.535
         };
 
@@ -94,12 +86,7 @@
 
         var quarryPopupTemplate = {
             title: "Carrière de Pierre de Saint-Bruno",
-            content: `
-                    <b>Type de Pierre :</b> Calcaire<br>
-                    <b>Profondeur :</b> 50 mètres<br>
-                    <b>Qualité :</b> Haute<br>
-                    <b>Réserves Estimées :</b> 1,2 million de tonnes<br>
-                `
+            content: getGeologicalInfo()
         };
 
         var quarryGraphic = new Graphic({
@@ -108,27 +95,67 @@
             popupTemplate: quarryPopupTemplate
         });
 
-        var quarryGraphic2 = new Graphic({
-            geometry: quarryPoint2,
-            symbol: quarrySymbol,
-            popupTemplate: quarryPopupTemplate
+        graphicsLayer.add(quarryGraphic);
+
+        var sketch = new Sketch({
+            view: view,
+            layer: graphicsLayer,
+            creationMode: "update"
         });
 
-        graphicsLayer.add(quarryGraphic);
-        graphicsLayer.add(quarryGraphic2);
+        view.ui.add(sketch, "top-right");
+
+        sketch.on("create", function(event) {
+            if (event.state === "complete") {
+                var geometry = event.graphic.geometry;
+                var randomInfo = getGeologicalInfo();
+
+                var popupTemplate = {
+                    title: "Informations Géologiques",
+                    content: randomInfo
+                };
+
+                var graphic = new Graphic({
+                    geometry: geometry,
+                    symbol: event.graphic.symbol,
+                    popupTemplate: popupTemplate
+                });
+
+                graphicsLayer.remove(event.graphic);
+                graphicsLayer.add(graphic);
+
+                view.popup.open({
+                    location: event.graphic.geometry.type === "point" ? event.graphic.geometry : event.graphic.geometry.extent.center,
+                    features: [graphic]
+                });
+            }
+        });
 
         view.on("click", function(event) {
             view.hitTest(event).then(function(response) {
-                var graphic = response.results[0].graphic;
-                if (graphic) {
-                    view.popup.open({
-                        location: event.mapPoint,
-                        features: [graphic],
-                        updateLocationEnabled: true
-                    });
+                if (response.results.length) {
+                    var graphic = response.results.filter(function(result) {
+                        return result.graphic.layer === graphicsLayer;
+                    })[0].graphic;
+
+                    if (graphic) {
+                        view.popup.open({
+                            location: event.mapPoint,
+                            features: [graphic]
+                        });
+                    }
                 }
             });
         });
+
+        function getGeologicalInfo() {
+            var info = [
+                "<b>Type de sol :</b> Argile<br><b>Profondeur :</b> 10 mètres<br><b>Qualité :</b> Moyenne<br><b>Réserves Estimées :</b> 500 000 tonnes<br><b>Éléments trouvés :</b> Fer, Cuivre, Or",
+                "<b>Type de sol :</b> Sable<br><b>Profondeur :</b> 20 mètres<br><b>Qualité :</b> Haute<br><b>Réserves Estimées :</b> 1 million de tonnes<br><b>Éléments trouvés :</b> Argent, Plomb, Zinc",
+                "<b>Type de sol :</b> Calcaire<br><b>Profondeur :</b> 15 mètres<br><b>Qualité :</b> Faible<br><b>Réserves Estimées :</b> 750 000 tonnes<br><b>Éléments trouvés :</b> Or, Fer, Nickel"
+            ];
+            return info[Math.floor(Math.random() * info.length)];
+        }
     });
 </script>
 </body>
